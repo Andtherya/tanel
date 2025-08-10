@@ -2,61 +2,184 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>倒计时面板</title>
+<title>倒计时面板（秒级）</title>
 <style>
-body { font-family: Arial; margin: 20px; }
-h1 { color: #444; }
-table { border-collapse: collapse; width: 100%; }
-th, td { padding: 8px; border-bottom: 1px solid #ddd; text-align: left; }
-input, button { padding: 5px; }
-button { cursor: pointer; }
-.days-left { font-weight: bold; color: #d9534f; }
+body { font-family: Arial, Helvetica, sans-serif; margin: 20px; max-width: 900px; }
+h1 { color: #222; }
+.controls { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
+input[type="text"], input[type="number"], input[type="datetime-local"] { padding:6px; font-size:14px; }
+button { padding:6px 10px; cursor:pointer; }
+table { width:100%; border-collapse:collapse; margin-top:10px; }
+th, td { padding:8px; border-bottom:1px solid #eee; text-align:left; font-size:14px; }
+.expired { background:#fff1f0; color:#b30000; } /* 红色背景表示已到期 */
+.countdown { font-weight:700; }
+.small { font-size:12px; color:#666; }
+.row-actions button { margin-right:6px; }
 </style>
 </head>
 <body>
-<h1>倒计时面板</h1>
+<h1>倒计时面板（秒级显示）</h1>
+
 <div>
-    <input id="name" placeholder="事件名称">
-    <input id="date" type="date">
-    <button onclick="addEvent()">添加</button>
+  <div class="controls">
+    <input id="name" type="text" placeholder="事件名称 (必填)" style="min-width:200px;">
+    <label class="small">到期时间（本地）<br>
+      <input id="date" type="datetime-local">
+    </label>
+
+    <div class="small" style="display:flex; gap:6px; align-items:center;">
+      <div>
+        <div class="small">或输入剩余时间</div>
+        <div style="display:flex; gap:6px; align-items:center; margin-top:4px;">
+          <input id="d" type="number" min="0" placeholder="天" style="width:60px;">
+          <input id="h" type="number" min="0" placeholder="小时" style="width:60px;">
+          <input id="m" type="number" min="0" placeholder="分钟" style="width:60px;">
+          <input id="s" type="number" min="0" placeholder="秒" style="width:60px;">
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:6px;">
+      <button onclick="addEvent()">添加事件</button>
+      <button onclick="refresh()">刷新</button>
+    </div>
+  </div>
 </div>
-<table id="eventTable">
-    <thead>
-        <tr><th>事件</th><th>到期日</th><th>剩余天数</th><th>操作</th></tr>
-    </thead>
-    <tbody></tbody>
+
+<table id="tbl">
+  <thead>
+    <tr><th>事件</th><th>到期时间</th><th>剩余时间</th><th class="small">操作</th></tr>
+  </thead>
+  <tbody></tbody>
 </table>
+
 <script>
-function loadEvents(){
-    fetch("/api/events").then(r=>r.json()).then(data=>{
-        let tbody = document.querySelector("#eventTable tbody");
-        tbody.innerHTML = "";
-        data.forEach(e=>{
-            let row = `<tr>
-                <td>${e.name}</td>
-                <td>${e.date}</td>
-                <td class="days-left">${e.days_left}</td>
-                <td><button onclick="delEvent('${e.name}')">删除</button></td>
-            </tr>`;
-            tbody.innerHTML += row;
-        });
-    });
+let events = []; // local copy with seconds_left
+let timer = null;
+
+function fetchEvents(){
+  return fetch("/api/events").then(r=>r.json()).then(data=>{
+    events = data;
+    // ensure seconds_left numeric
+    events.forEach(e=> e.seconds_left = Number(e.seconds_left));
+    renderTable();
+    if(timer) clearInterval(timer);
+    timer = setInterval(tick, 1000);
+  });
 }
+
+function tick(){
+  // decrement seconds locally and re-render just times / classes for efficiency
+  events.forEach(e => e.seconds_left = Number(e.seconds_left) - 1);
+  updateCountdownCells();
+}
+
+function secsToStr(sec){
+  let negative = sec < 0;
+  sec = Math.abs(sec);
+  const days = Math.floor(sec / 86400); sec %= 86400;
+  const hours = Math.floor(sec / 3600); sec %= 3600;
+  const mins = Math.floor(sec / 60); const seconds = sec % 60;
+  const parts = [];
+  if(days) parts.push(days + "d");
+  parts.push(String(hours).padStart(2,'0') + ":" + String(mins).padStart(2,'0') + ":" + String(seconds).padStart(2,'0'));
+  return (negative ? "-" : "") + parts.join(" ");
+}
+
+function renderTable(){
+  const tbody = document.querySelector("#tbl tbody");
+  tbody.innerHTML = "";
+  events.forEach(e=>{
+    const row = document.createElement("tr");
+    row.id = "row-" + e.id;
+    if(e.seconds_left < 0) row.classList.add("expired");
+    row.innerHTML = `
+      <td>${escapeHtml(e.name)}</td>
+      <td class="target">${escapeHtml(e.target)}</td>
+      <td class="countdown">${secsToStr(Number(e.seconds_left))}</td>
+      <td class="row-actions">
+        <button onclick="delEvent('${e.id}')">删除</button>
+      </td>
+    `;
+    tbody.appendChild(row);
+  });
+}
+
+function updateCountdownCells(){
+  events.forEach(e=>{
+    const row = document.getElementById("row-" + e.id);
+    if(!row) return;
+    const cell = row.querySelector(".countdown");
+    cell.textContent = secsToStr(Number(e.seconds_left));
+    if(Number(e.seconds_left) < 0) row.classList.add("expired");
+  });
+}
+
 function addEvent(){
-    let name = document.getElementById("name").value;
-    let date = document.getElementById("date").value;
-    if(!name || !date) return alert("请输入名称和日期");
-    fetch("/api/events", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({name, date})
-    }).then(()=>loadEvents());
+  const name = document.getElementById("name").value.trim();
+  const date = document.getElementById("date").value; // datetime-local string
+  const d = Number(document.getElementById("d").value || 0);
+  const h = Number(document.getElementById("h").value || 0);
+  const m = Number(document.getElementById("m").value || 0);
+  const s = Number(document.getElementById("s").value || 0);
+
+  if(!name) return alert("请输入事件名称");
+
+  let payload = { name };
+
+  if(date){
+    payload.date = date;
+  } else {
+    const total = (((d*24 + h)*60 + m)*60 + s);
+    if(total <= 0) return alert("请填写到期时间或有效的剩余时间");
+    payload.duration_seconds = total;
+  }
+
+  fetch("/api/events", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify(payload)
+  }).then(r=>{
+    if(!r.ok) return r.json().then(x=>{ throw new Error(x.error || "添加失败") });
+    return r.json();
+  }).then(x=>{
+    // clear inputs
+    document.getElementById("name").value = "";
+    document.getElementById("date").value = "";
+    document.getElementById("d").value = "";
+    document.getElementById("h").value = "";
+    document.getElementById("m").value = "";
+    document.getElementById("s").value = "";
+    return fetchEvents();
+  }).catch(err=>{
+    alert("错误: " + err.message);
+  });
 }
-function delEvent(name){
-    fetch(`/api/events?name=${encodeURIComponent(name)}`, {method:"DELETE"})
-    .then(()=>loadEvents());
+
+function delEvent(id){
+  if(!confirm("确定删除此事件？")) return;
+  fetch("/api/events/" + encodeURIComponent(id), {method:"DELETE"})
+    .then(r=> {
+      if(!r.ok) return r.json().then(x=>{ throw new Error(x.error || "删除失败")});
+      return r.json();
+    })
+    .then(()=> fetchEvents())
+    .catch(err=> alert("错误: " + err.message));
 }
-loadEvents();
+
+function refresh(){ fetchEvents(); }
+
+function escapeHtml(unsafe) {
+    return unsafe
+         .replace(/&/g, "&amp;")
+         .replace(/</g, "&lt;")
+         .replace(/>/g, "&gt;")
+         .replace(/"/g, "&quot;")
+         .replace(/'/g, "&#039;");
+}
+
+// initial load
+fetchEvents();
 </script>
 </body>
 </html>
