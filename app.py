@@ -1,7 +1,10 @@
+import os
 from flask import Flask, render_template, request, jsonify
-import json, os
-from datetime import datetime, timedelta, timezone
+import json
+from datetime import datetime, timedelta
 import uuid
+
+BASE_PATH = os.environ.get("BASE_PATH", "/sub").rstrip("/")
 
 app = Flask(__name__)
 DATA_FILE = "/app/events.json"
@@ -19,11 +22,9 @@ def save_events(events):
         json.dump(events, f, ensure_ascii=False, indent=2)
 
 def parse_datetime_local(s):
-    # s from browser datetime-local: "YYYY-MM-DDTHH:MM" or "YYYY-MM-DDTHH:MM:SS"
     if not s:
         return None
     try:
-        # try with seconds
         return datetime.strptime(s, "%Y-%m-%dT%H:%M:%S")
     except:
         try:
@@ -32,10 +33,14 @@ def parse_datetime_local(s):
             return None
 
 @app.route("/")
-def index():
-    return render_template("index.html")
+def home():
+    return "<h1>Hello World</h1>"
 
-@app.route("/api/events", methods=["GET", "POST"])
+@app.route(f"{BASE_PATH}")
+def index():
+    return render_template("index.html", base_path=BASE_PATH)
+
+@app.route(f"{BASE_PATH}/api/events", methods=["GET", "POST"])
 def events_api():
     if request.method == "POST":
         data = request.json or {}
@@ -43,10 +48,8 @@ def events_api():
         if not name:
             return jsonify({"error": "name required"}), 400
 
-        # prefer explicit date if given
-        date_str = data.get("date")  # from datetime-local (e.g. "2025-08-10T09:12")
+        date_str = data.get("date")
         duration_seconds = data.get("duration_seconds")
-
         now = datetime.now()
         target = None
 
@@ -67,7 +70,6 @@ def events_api():
         ev = {
             "id": str(uuid.uuid4()),
             "name": name,
-            # store ISO-local (no timezone) for simplicity
             "target": target.strftime("%Y-%m-%dT%H:%M:%S")
         }
         events = load_events()
@@ -75,7 +77,7 @@ def events_api():
         save_events(events)
         return jsonify({"status": "ok", "event": ev})
 
-    else:  # GET
+    else:
         events = load_events()
         now = datetime.now()
         out = []
@@ -83,7 +85,6 @@ def events_api():
             try:
                 target = datetime.strptime(e["target"], "%Y-%m-%dT%H:%M:%S")
             except:
-                # fallback: try date-only
                 target = datetime.strptime(e["target"], "%Y-%m-%d")
             seconds_left = int((target - now).total_seconds())
             out.append({
@@ -92,11 +93,10 @@ def events_api():
                 "target": e.get("target"),
                 "seconds_left": seconds_left
             })
-        # sort by seconds_left ascending
         out.sort(key=lambda x: x["seconds_left"])
         return jsonify(out)
 
-@app.route("/api/events/<eid>", methods=["DELETE"])
+@app.route(f"{BASE_PATH}/api/events/<eid>", methods=["DELETE"])
 def delete_event(eid):
     events = load_events()
     new = [e for e in events if e.get("id") != eid]
@@ -104,7 +104,3 @@ def delete_event(eid):
         return jsonify({"error": "not found"}), 404
     save_events(new)
     return jsonify({"status": "ok"})
-
-if __name__ == "__main__":
-    # only used for local debugging, in container we'll use gunicorn
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5000")))
