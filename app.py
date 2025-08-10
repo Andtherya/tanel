@@ -20,13 +20,12 @@ def save_events(events):
         json.dump(events, f, ensure_ascii=False, indent=2)
 
 def check_auth():
-    # 判断请求 Cookie 是否有授权
     return request.cookies.get("access_granted") == "true"
 
 @app.before_request
 def require_password():
     if request.path in ["/login", "/favicon.ico"] or request.path.startswith("/static/"):
-        return None  # 登录页和静态资源无需密码
+        return None
     if not check_auth():
         return redirect(url_for("login"))
 
@@ -37,7 +36,6 @@ def login():
         pw = request.form.get("password", "")
         if pw == ACCESS_PASSWORD:
             resp = make_response(redirect(url_for("index")))
-            # 设置 cookie 7 天有效
             resp.set_cookie("access_granted", "true", max_age=7*24*3600, httponly=True)
             return resp
         else:
@@ -56,36 +54,26 @@ def events_api():
     if request.method == "POST":
         data = request.json or {}
         name = data.get("name", "").strip()
+        duration_seconds = data.get("duration_seconds")
         if not name:
             return jsonify({"error": "name required"}), 400
-
-        date_str = data.get("date")
-        duration_seconds = data.get("duration_seconds")
+        if duration_seconds is None:
+            return jsonify({"error": "duration_seconds required"}), 400
+        try:
+            ds = int(duration_seconds)
+            if ds <= 0:
+                return jsonify({"error": "duration_seconds must > 0"}), 400
+        except:
+            return jsonify({"error": "invalid duration_seconds"}), 400
 
         now = datetime.now()
-        target = None
-
-        if date_str:
-            try:
-                target = datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%S")
-            except:
-                try:
-                    target = datetime.strptime(date_str, "%Y-%m-%dT%H:%M")
-                except:
-                    return jsonify({"error": "invalid date format"}), 400
-        elif duration_seconds is not None:
-            try:
-                ds = int(duration_seconds)
-            except:
-                return jsonify({"error": "invalid duration_seconds"}), 400
-            target = now + timedelta(seconds=ds)
-        else:
-            return jsonify({"error": "either date or duration_seconds required"}), 400
+        target = now + timedelta(seconds=ds)
 
         ev = {
             "id": str(uuid.uuid4()),
             "name": name,
-            "target": target.strftime("%Y-%m-%dT%H:%M:%S")
+            "target": target.strftime("%Y-%m-%dT%H:%M:%S"),
+            "duration_seconds": ds
         }
         events = load_events()
         events.append(ev)
@@ -106,7 +94,8 @@ def events_api():
                 "id": e.get("id"),
                 "name": e.get("name"),
                 "target": e.get("target"),
-                "seconds_left": seconds_left
+                "seconds_left": seconds_left,
+                "duration_seconds": e.get("duration_seconds", 0)
             })
         out.sort(key=lambda x: x["seconds_left"])
         return jsonify(out)
