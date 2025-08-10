@@ -11,7 +11,7 @@ input[type="text"], input[type="number"], input[type="datetime-local"] { padding
 button { padding:6px 10px; cursor:pointer; }
 table { width:100%; border-collapse:collapse; margin-top:10px; }
 th, td { padding:8px; border-bottom:1px solid #eee; text-align:left; font-size:14px; }
-.expired { background:#fff1f0; color:#b30000; }
+.expired { background:#fff1f0; color:#b30000; } /* 红色背景表示已到期 */
 .countdown { font-weight:700; }
 .small { font-size:12px; color:#666; }
 .row-actions button { margin-right:6px; }
@@ -54,18 +54,19 @@ th, td { padding:8px; border-bottom:1px solid #eee; text-align:left; font-size:1
 </table>
 
 <script>
-const BASE_PATH = "{{ base_path }}";
 let events = [];
 let timer = null;
 
 function fetchEvents(){
-  return fetch(`${BASE_PATH}/api/events`).then(r=>r.json()).then(data=>{
-    events = data;
-    events.forEach(e=> e.seconds_left = Number(e.seconds_left));
-    renderTable();
-    if(timer) clearInterval(timer);
-    timer = setInterval(tick, 1000);
-  });
+  return fetch("/api/events", {credentials: "same-origin"})
+    .then(r => r.json())
+    .then(data => {
+      events = data;
+      events.forEach(e => e.seconds_left = Number(e.seconds_left));
+      renderTable();
+      if(timer) clearInterval(timer);
+      timer = setInterval(tick, 1000);
+    });
 }
 
 function tick(){
@@ -88,7 +89,7 @@ function secsToStr(sec){
 function renderTable(){
   const tbody = document.querySelector("#tbl tbody");
   tbody.innerHTML = "";
-  events.forEach(e=>{
+  events.forEach(e => {
     const row = document.createElement("tr");
     row.id = "row-" + e.id;
     if(e.seconds_left < 0) row.classList.add("expired");
@@ -105,7 +106,7 @@ function renderTable(){
 }
 
 function updateCountdownCells(){
-  events.forEach(e=>{
+  events.forEach(e => {
     const row = document.getElementById("row-" + e.id);
     if(!row) return;
     const cell = row.querySelector(".countdown");
@@ -134,14 +135,15 @@ function addEvent(){
     payload.duration_seconds = total;
   }
 
-  fetch(`${BASE_PATH}/api/events`, {
+  fetch("/api/events", {
     method: "POST",
-    headers: {"Content-Type":"application/json"},
+    headers: {"Content-Type": "application/json"},
+    credentials: "same-origin",
     body: JSON.stringify(payload)
-  }).then(r=>{
-    if(!r.ok) return r.json().then(x=>{ throw new Error(x.error || "添加失败") });
+  }).then(r => {
+    if(!r.ok) return r.json().then(x => { throw new Error(x.error || "添加失败") });
     return r.json();
-  }).then(x=>{
+  }).then(() => {
     document.getElementById("name").value = "";
     document.getElementById("date").value = "";
     document.getElementById("d").value = "";
@@ -149,17 +151,36 @@ function addEvent(){
     document.getElementById("m").value = "";
     document.getElementById("s").value = "";
     return fetchEvents();
-  }).catch(err=>{
+  }).catch(err => {
     alert("错误: " + err.message);
   });
 }
 
 function delEvent(id){
   if(!confirm("确定删除此事件？")) return;
-  fetch(`${BASE_PATH}/api/events/${encodeURIComponent(id)}`, {method:"DELETE"})
-    .then(r=> {
-      if(!r.ok) return r.json().then(x=>{ throw new Error(x.error || "删除失败")});
-      return r.json();
-    })
-    .then(()=> fetchEvents())
-    .catch(err=> ale
+  fetch("/api/events/" + encodeURIComponent(id), {
+    method: "DELETE",
+    credentials: "same-origin"
+  }).then(r => {
+    if(!r.ok) return r.json().then(x => { throw new Error(x.error || "删除失败") });
+    return r.json();
+  }).then(() => fetchEvents())
+  .catch(err => alert("错误: " + err.message));
+}
+
+function refresh(){ fetchEvents(); }
+
+function escapeHtml(unsafe) {
+  return unsafe
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+// 页面加载完成后自动加载事件
+fetchEvents();
+</script>
+</body>
+</html>
