@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>倒计时面板</title>
+<style>
+body { font-family: Arial; margin: 20px; }
+h1 { color: #444; }
+table { border-collapse: collapse; width: 100%; }
+th, td { padding: 8px; border-bottom: 1px solid #ddd; text-align: left; }
+input, button { padding: 5px; }
+button { cursor: pointer; }
+.days-left { font-weight: bold; color: #d9534f; }
+</style>
+</head>
+<body>
+<h1>倒计时面板</h1>
+<div>
+    <input id="name" placeholder="事件名称">
+    <input id="date" type="date">
+    <button onclick="addEvent()">添加</button>
+</div>
+<table id="eventTable">
+    <thead>
+        <tr><th>事件</th><th>到期日</th><th>剩余天数</th><th>操作</th></tr>
+    </thead>
+    <tbody></tbody>
+</table>
+<script>
+function loadEvents(){
+    fetch("/api/events").then(r=>r.json()).then(data=>{
+        let tbody = document.querySelector("#eventTable tbody");
+        tbody.innerHTML = "";
+        data.forEach(e=>{
+            let row = `<tr>
+                <td>${e.name}</td>
+                <td>${e.date}</td>
+                <td class="days-left">${e.days_left}</td>
+                <td><button onclick="delEvent('${e.name}')">删除</button></td>
+            </tr>`;
+            tbody.innerHTML += row;
+        });
+    });
+}
+function addEvent(){
+    let name = document.getElementById("name").value;
+    let date = document.getElementById("date").value;
+    if(!name || !date) return alert("请输入名称和日期");
+    fetch("/api/events", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({name, date})
+    }).then(()=>loadEvents());
+}
+function delEvent(name){
+    fetch(`/api/events?name=${encodeURIComponent(name)}`, {method:"DELETE"})
+    .then(()=>loadEvents());
+}
+loadEvents();
+</script>
+</body>
+</html>
