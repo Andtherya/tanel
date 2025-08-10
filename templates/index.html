@@ -7,11 +7,11 @@
 body { font-family: Arial, Helvetica, sans-serif; margin: 20px; max-width: 900px; }
 h1 { color: #222; }
 .controls { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
-input[type="text"], input[type="number"], input[type="datetime-local"] { padding:6px; font-size:14px; }
+input[type="text"], input[type="number"] { padding:6px; font-size:14px; }
 button { padding:6px 10px; cursor:pointer; }
 table { width:100%; border-collapse:collapse; margin-top:10px; }
 th, td { padding:8px; border-bottom:1px solid #eee; text-align:left; font-size:14px; }
-.expired { background:#fff1f0; color:#b30000; } /* 红色背景表示已到期 */
+.expired { background:#fff1f0; color:#b30000; }
 .countdown { font-weight:700; }
 .small { font-size:12px; color:#666; }
 .row-actions button { margin-right:6px; }
@@ -23,13 +23,9 @@ th, td { padding:8px; border-bottom:1px solid #eee; text-align:left; font-size:1
 <div>
   <div class="controls">
     <input id="name" type="text" placeholder="事件名称 (必填)" style="min-width:200px;">
-    <label class="small">到期时间（本地）<br>
-      <input id="date" type="datetime-local">
-    </label>
-
     <div class="small" style="display:flex; gap:6px; align-items:center;">
       <div>
-        <div class="small">或输入剩余时间</div>
+        <div class="small">剩余时间</div>
         <div style="display:flex; gap:6px; align-items:center; margin-top:4px;">
           <input id="d" type="number" min="0" placeholder="天" style="width:60px;">
           <input id="h" type="number" min="0" placeholder="小时" style="width:60px;">
@@ -48,7 +44,7 @@ th, td { padding:8px; border-bottom:1px solid #eee; text-align:left; font-size:1
 
 <table id="tbl">
   <thead>
-    <tr><th>事件</th><th>到期时间</th><th>剩余时间</th><th class="small">操作</th></tr>
+    <tr><th>事件</th><th>剩余时间</th><th class="small">操作</th></tr>
   </thead>
   <tbody></tbody>
 </table>
@@ -93,12 +89,15 @@ function renderTable(){
     const row = document.createElement("tr");
     row.id = "row-" + e.id;
     if(e.seconds_left < 0) row.classList.add("expired");
+
+    const resetDisabled = e.seconds_left >= 0 ? "disabled" : "";
+
     row.innerHTML = `
       <td>${escapeHtml(e.name)}</td>
-      <td class="target">${escapeHtml(e.target)}</td>
       <td class="countdown">${secsToStr(Number(e.seconds_left))}</td>
       <td class="row-actions">
         <button onclick="delEvent('${e.id}')">删除</button>
+        <button ${resetDisabled} onclick="resetEvent('${e.id}')">重置</button>
       </td>
     `;
     tbody.appendChild(row);
@@ -112,12 +111,15 @@ function updateCountdownCells(){
     const cell = row.querySelector(".countdown");
     cell.textContent = secsToStr(Number(e.seconds_left));
     if(Number(e.seconds_left) < 0) row.classList.add("expired");
+    else row.classList.remove("expired");
+
+    const btnReset = row.querySelector("button[onclick^='resetEvent']");
+    if(btnReset) btnReset.disabled = e.seconds_left >= 0;
   });
 }
 
 function addEvent(){
   const name = document.getElementById("name").value.trim();
-  const date = document.getElementById("date").value;
   const d = Number(document.getElementById("d").value || 0);
   const h = Number(document.getElementById("h").value || 0);
   const m = Number(document.getElementById("m").value || 0);
@@ -125,15 +127,13 @@ function addEvent(){
 
   if(!name) return alert("请输入事件名称");
 
-  let payload = { name };
+  const total = (((d*24 + h)*60 + m)*60 + s);
+  if(total <= 0) return alert("请输入有效的剩余时间");
 
-  if(date){
-    payload.date = date;
-  } else {
-    const total = (((d*24 + h)*60 + m)*60 + s);
-    if(total <= 0) return alert("请填写到期时间或有效的剩余时间");
-    payload.duration_seconds = total;
-  }
+  const payload = {
+    name: name,
+    duration_seconds: total
+  };
 
   fetch("/api/events", {
     method: "POST",
@@ -145,7 +145,6 @@ function addEvent(){
     return r.json();
   }).then(() => {
     document.getElementById("name").value = "";
-    document.getElementById("date").value = "";
     document.getElementById("d").value = "";
     document.getElementById("h").value = "";
     document.getElementById("m").value = "";
@@ -154,6 +153,37 @@ function addEvent(){
   }).catch(err => {
     alert("错误: " + err.message);
   });
+}
+
+function resetEvent(id){
+  const ev = events.find(e => e.id === id);
+  if(!ev){
+    alert("事件未找到");
+    return;
+  }
+  const ds = Number(ev.duration_seconds);
+  if(!ds || ds <= 0){
+    alert("事件无有效剩余时间");
+    return;
+  }
+
+  fetch("/api/events/" + encodeURIComponent(id), {
+    method: "DELETE",
+    credentials: "same-origin"
+  }).then(r => {
+    if(!r.ok) return r.json().then(x => { throw new Error(x.error || "删除失败") });
+    const payload = { name: ev.name, duration_seconds: ds };
+    return fetch("/api/events", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      credentials: "same-origin",
+      body: JSON.stringify(payload)
+    });
+  }).then(r => {
+    if(!r.ok) return r.json().then(x => { throw new Error(x.error || "重置失败") });
+    return r.json();
+  }).then(() => fetchEvents())
+  .catch(err => alert("错误: " + err.message));
 }
 
 function delEvent(id){
@@ -179,7 +209,6 @@ function escapeHtml(unsafe) {
     .replace(/'/g, "&#039;");
 }
 
-// 页面加载完成后自动加载事件
 fetchEvents();
 </script>
 </body>
