@@ -1,0 +1,28 @@
+name: Build and Push to GHCR
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+
+ 
+    - name: Build Docker image
+      run: |
+        docker build -t tanel:v1 .
+ 
+    - name: Log in to Docker Hub
+      run: |
+        echo "${{ secrets.DOCKER_PASSWORD }}" | docker login docker.io -u ${{ secrets.DOCKER_USERNAME }} --password-stdin
+ 
+    - name: Push Docker image
+      run: |
+        docker tag tanel:v1 ahpamer/tanel:v1
+        docker push ahpamer/tanel:v1
