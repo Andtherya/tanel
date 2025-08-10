@@ -54,13 +54,14 @@ th, td { padding:8px; border-bottom:1px solid #eee; text-align:left; font-size:1
 </table>
 
 <script>
-let events = []; // local copy with seconds_left
+const BASE_PATH = "{{ base_path }}";
+
+let events = [];
 let timer = null;
 
 function fetchEvents(){
-  return fetch("/api/events").then(r=>r.json()).then(data=>{
+  return fetch(`${BASE_PATH}/api/events`).then(r=>r.json()).then(data=>{
     events = data;
-    // ensure seconds_left numeric
     events.forEach(e=> e.seconds_left = Number(e.seconds_left));
     renderTable();
     if(timer) clearInterval(timer);
@@ -69,7 +70,6 @@ function fetchEvents(){
 }
 
 function tick(){
-  // decrement seconds locally and re-render just times / classes for efficiency
   events.forEach(e => e.seconds_left = Number(e.seconds_left) - 1);
   updateCountdownCells();
 }
@@ -117,7 +117,7 @@ function updateCountdownCells(){
 
 function addEvent(){
   const name = document.getElementById("name").value.trim();
-  const date = document.getElementById("date").value; // datetime-local string
+  const date = document.getElementById("date").value;
   const d = Number(document.getElementById("d").value || 0);
   const h = Number(document.getElementById("h").value || 0);
   const m = Number(document.getElementById("m").value || 0);
@@ -135,7 +135,7 @@ function addEvent(){
     payload.duration_seconds = total;
   }
 
-  fetch("/api/events", {
+  fetch(`${BASE_PATH}/api/events`, {
     method: "POST",
     headers: {"Content-Type":"application/json"},
     body: JSON.stringify(payload)
@@ -143,7 +143,6 @@ function addEvent(){
     if(!r.ok) return r.json().then(x=>{ throw new Error(x.error || "添加失败") });
     return r.json();
   }).then(x=>{
-    // clear inputs
     document.getElementById("name").value = "";
     document.getElementById("date").value = "";
     document.getElementById("d").value = "";
@@ -158,7 +157,7 @@ function addEvent(){
 
 function delEvent(id){
   if(!confirm("确定删除此事件？")) return;
-  fetch("/api/events/" + encodeURIComponent(id), {method:"DELETE"})
+  fetch(`${BASE_PATH}/api/events/${encodeURIComponent(id)}`, {method:"DELETE"})
     .then(r=> {
       if(!r.ok) return r.json().then(x=>{ throw new Error(x.error || "删除失败")});
       return r.json();
@@ -178,7 +177,6 @@ function escapeHtml(unsafe) {
          .replace(/'/g, "&#039;");
 }
 
-// initial load
 fetchEvents();
 </script>
 </body>
